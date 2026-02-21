@@ -1,4 +1,5 @@
 package com.fendrixx.aurus.menu;
+
 import com.fendrixx.aurus.processors.ActionProcessor;
 import com.fendrixx.aurus.util.ColorUtils;
 import org.bukkit.Color;
@@ -9,14 +10,18 @@ import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Transformation;
 import org.joml.Vector3f;
+
 public class MenuRenderer {
     private final ActionProcessor actionProcessor;
+
     public MenuRenderer(ActionProcessor actionProcessor) {
         this.actionProcessor = actionProcessor;
     }
+
     public MenuButton createComponent(Player player, String type, ConfigurationSection conf, Location loc, Runnable closeAction) {
-        float scale = (float) conf.getDouble("size", 1.0);
+        float scale = (float) conf.getDouble("scale", 1.0);
         String rawText = conf.getString("text", "");
+
         return switch (type) {
             case "TEXT" -> {
                 TextDisplay td = spawnTextDisplay(loc, player, rawText, conf, scale);
@@ -45,14 +50,15 @@ public class MenuRenderer {
             default -> null;
         };
     }
+
     private TextDisplay spawnTextDisplay(Location loc, Player p, String raw, ConfigurationSection conf, float scale) {
         TextDisplay td = (TextDisplay) loc.getWorld().spawnEntity(loc, EntityType.TEXT_DISPLAY);
         td.setText(ColorUtils.format(actionProcessor.parse(p, raw)));
-        if (!conf.getBoolean("background", false)) td.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
+        if (!conf.getBoolean("background", true)) td.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
         setupDisplay(td, scale, conf);
-        td.setBillboard(Display.Billboard.CENTER);
         return td;
     }
+
     public void setupDisplay(Display display, float scale, ConfigurationSection conf) {
         display.setBillboard(Display.Billboard.CENTER);
         Transformation trans = display.getTransformation();

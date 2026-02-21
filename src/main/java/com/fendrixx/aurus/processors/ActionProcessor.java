@@ -1,21 +1,28 @@
 package com.fendrixx.aurus.processors;
+
 import com.fendrixx.aurus.Aurus;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
+
 import java.util.List;
+
 public class ActionProcessor {
     private final Aurus plugin;
+
     public ActionProcessor(Aurus plugin) { this.plugin = plugin; }
+
     public void process(Player player, String action, Runnable closeCallback) {
         String cmd = action.replace("%player%", player.getName());
+
         if (cmd.equalsIgnoreCase("[close]")) {
             if (closeCallback != null) {
                 closeCallback.run();
             }
             return;
         }
+
         if (cmd.startsWith("[console] ")) {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.substring(10));
         } else if (cmd.startsWith("[player] ")) {
@@ -39,12 +46,13 @@ public class ActionProcessor {
                 player.playSound(player.getLocation(), sound, vol, pitch);
             } catch (Exception ignored) {}
         }
-        // give me more ideas about more actions i can add, i run out of ideas lol
     }
+
     public void processList(Player player, List<String> actions, Runnable closeCallback) {
         if (actions == null) return;
         for (String action : actions) process(player, action, closeCallback);
     }
+
     public String parse(Player player, String text) {
         if (text == null) return "";
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
