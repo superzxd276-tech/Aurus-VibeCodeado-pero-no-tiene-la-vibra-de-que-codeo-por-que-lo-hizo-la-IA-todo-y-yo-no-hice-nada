@@ -32,7 +32,6 @@ public class MenuButton {
     }
 
     public Display getDisplay() { return display; }
-    public String getRawText() { return rawText; }
     public String getType() { return type; }
     public String getVariableName() { return variableName; }
     public ConfigurationSection getConfig() { return config; }

@@ -20,16 +20,20 @@ public class MathUtil {
         Vector up = new Vector(0, 1, 0);
 
         float deltaYaw = normalizeAngle(playerYaw - cameraYaw);
-
         float limitedPitch = Math.max(-80, Math.min(80, playerPitch));
 
         double x = -Math.tan(Math.toRadians(deltaYaw)) * distance;
         double y = Math.tan(Math.toRadians(-limitedPitch)) * distance;
 
-        return cameraLoc.clone()
+        Location loc = cameraLoc.clone()
                 .add(forward.multiply(distance))
                 .add(right.multiply(x))
                 .add(up.multiply(y));
+
+        loc.setYaw(playerYaw + 180f);
+        loc.setPitch(-playerPitch);
+
+        return loc;
     }
 
     public static float normalizeAngle(float angle) {

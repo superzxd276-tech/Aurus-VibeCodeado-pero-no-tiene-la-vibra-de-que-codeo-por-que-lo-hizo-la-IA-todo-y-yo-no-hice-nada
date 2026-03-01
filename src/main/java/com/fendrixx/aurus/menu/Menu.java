@@ -68,9 +68,8 @@ public class Menu {
     private void spawnCursor() {
         ConfigurationSection c = plugin.getConfigHandler().getCursorSection();
         Location loc = player.getEyeLocation().add(player.getLocation().getDirection().multiply(menuDistance));
-
-        // Simplificado: por defecto TEXT si no hay config
         TextDisplay td = (TextDisplay) player.getWorld().spawnEntity(loc, EntityType.TEXT_DISPLAY);
+        td.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
         td.setText(ColorUtils.format(c != null ? c.getString("value", "!") : "!"));
         td.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
         renderer.setupDisplay(td, (float) (c != null ? c.getDouble("size", 1.5) : 1.5), c);
