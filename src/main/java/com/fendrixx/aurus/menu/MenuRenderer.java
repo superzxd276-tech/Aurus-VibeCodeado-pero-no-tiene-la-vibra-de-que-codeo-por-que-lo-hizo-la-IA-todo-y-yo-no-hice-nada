@@ -53,6 +53,7 @@ public class MenuRenderer {
 
     private TextDisplay spawnTextDisplay(Location loc, Player p, String raw, ConfigurationSection conf, float scale) {
         TextDisplay td = (TextDisplay) loc.getWorld().spawnEntity(loc, EntityType.TEXT_DISPLAY);
+        td.setBillboard(Display.Billboard.FIXED);
         td.setText(ColorUtils.format(actionProcessor.parse(p, raw)));
         if (!conf.getBoolean("background", true)) td.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
         setupDisplay(td, scale, conf);

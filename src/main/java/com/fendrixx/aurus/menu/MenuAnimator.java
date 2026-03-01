@@ -45,13 +45,6 @@ public class MenuAnimator extends BukkitRunnable {
             Transformation trans = display.getTransformation();
             boolean changed = false;
 
-            if (anim.contains("x-formula") || anim.contains("y-formula")) {
-                float offX = (float) MathUtil.evaluate(anim.getString("x-formula", "0"), ticks);
-                float offY = (float) MathUtil.evaluate(anim.getString("y-formula", "0"), ticks);
-                trans.getTranslation().set(offX, offY, 0);
-                changed = true;
-            }
-
             if (anim.contains("scale-formula")) {
                 float s = (float) MathUtil.evaluate(anim.getString("scale-formula"), ticks);
                 trans.getScale().set(s, s, s);

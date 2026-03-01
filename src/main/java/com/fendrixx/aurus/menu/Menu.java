@@ -8,6 +8,7 @@ import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.*;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -77,13 +78,21 @@ public class Menu {
     }
 
     public Location calculateComponentLocation(double x, double y) {
-        return MathUtil.getComponentLocation(
-                camera.getLocation(),
-                camera.getLocation().getYaw(),
-                menuDistance,
-                x,
-                y
-        );
+        Location eyeLoc = player.getEyeLocation();
+        Vector direction = eyeLoc.getDirection().normalize();
+
+        Vector right = new Vector(-direction.getZ(), 0, direction.getX()).normalize();
+        Vector up = direction.clone().crossProduct(right).multiply(-1).normalize();
+
+        Location center = eyeLoc.clone().add(direction.multiply(2));
+
+        center.add(right.multiply(x));
+        center.add(up.multiply(y));
+
+        center.setYaw(player.getLocation().getYaw() + 180f);
+        center.setPitch(-player.getLocation().getPitch());
+
+        return center;
     }
 
     public void close() {
