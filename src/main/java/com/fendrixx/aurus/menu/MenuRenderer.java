@@ -19,44 +19,44 @@ public class MenuRenderer {
     }
 
     public MenuButton createComponent(Player player, String type, ConfigurationSection conf, Location loc, Runnable closeAction) {
-        float scale = (float) conf.getDouble("scale", 1.0);
+        float size = (float) conf.getDouble("size", 1.0);
         String rawText = conf.getString("text", "");
 
         return switch (type) {
             case "TEXT" -> {
-                TextDisplay td = spawnTextDisplay(loc, player, rawText, conf, scale);
+                TextDisplay td = spawnTextDisplay(loc, player, rawText, conf, size);
                 yield new MenuButton(td, rawText, null, "TEXT", null, conf);
             }
             case "BUTTON" -> {
-                TextDisplay td = spawnTextDisplay(loc, player, rawText, conf, scale);
+                TextDisplay td = spawnTextDisplay(loc, player, rawText, conf, size);
                 yield new MenuButton(td, rawText, () -> actionProcessor.processList(player, conf.getStringList("actions"), closeAction), "BUTTON", null, conf);
             }
             case "INPUT" -> {
-                TextDisplay td = spawnTextDisplay(loc, player, rawText, conf, scale);
+                TextDisplay td = spawnTextDisplay(loc, player, rawText, conf, size);
                 yield new MenuButton(td, rawText, () -> actionProcessor.processList(player, conf.getStringList("actions"), closeAction), "INPUT", conf.getString("variable_name"), conf);
             }
             case "ITEM" -> {
                 ItemDisplay id = (ItemDisplay) loc.getWorld().spawnEntity(loc, EntityType.ITEM_DISPLAY);
                 id.setItemStack(new ItemStack(Material.matchMaterial(conf.getString("material", "STONE"))));
-                setupDisplay(id, scale, conf);
+                setupDisplay(id, size, conf);
                 yield new MenuButton(id, null, null, "ITEM", null, conf);
             }
             case "BLOCK" -> {
                 BlockDisplay bd = (BlockDisplay) loc.getWorld().spawnEntity(loc, EntityType.BLOCK_DISPLAY);
-                bd.setBlock(Material.matchMaterial(conf.getString("block", "STONE")).createBlockData());
-                setupDisplay(bd, scale, conf);
+                bd.setBlock(Material.matchMaterial(conf.getString("material", "STONE")).createBlockData());
+                setupDisplay(bd, size, conf);
                 yield new MenuButton(bd, null, null, "BLOCK", null, conf);
             }
             default -> null;
         };
     }
 
-    private TextDisplay spawnTextDisplay(Location loc, Player p, String raw, ConfigurationSection conf, float scale) {
+    private TextDisplay spawnTextDisplay(Location loc, Player p, String raw, ConfigurationSection conf, float size) {
         TextDisplay td = (TextDisplay) loc.getWorld().spawnEntity(loc, EntityType.TEXT_DISPLAY);
         td.setBillboard(Display.Billboard.FIXED);
         td.setText(ColorUtils.format(actionProcessor.parse(p, raw)));
         if (!conf.getBoolean("background", true)) td.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
-        setupDisplay(td, scale, conf);
+        setupDisplay(td, size, conf);
         return td;
     }
 

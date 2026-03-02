@@ -77,14 +77,14 @@ public class Menu {
     }
 
     public Location calculateComponentLocation(double x, double y) {
-        Location eyeLoc = player.getEyeLocation();
-        Vector direction = eyeLoc.getDirection().normalize();
+        Location origin = player.getEyeLocation().clone().add(0, -0.4, 0);
+
+        Vector direction = player.getEyeLocation().getDirection().normalize();
 
         Vector right = new Vector(-direction.getZ(), 0, direction.getX()).normalize();
         Vector up = direction.clone().crossProduct(right).multiply(-1).normalize();
 
-        Location center = eyeLoc.clone().add(direction.multiply(2));
-
+        Location center = origin.add(direction.multiply(2));
         center.add(right.multiply(x));
         center.add(up.multiply(y));
 
