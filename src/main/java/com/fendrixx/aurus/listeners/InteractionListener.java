@@ -12,13 +12,17 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class InteractionListener implements Listener {
+
     private final Aurus plugin;
-    private final Map<UUID, Long> lastClick = new HashMap<>();
+    // Usamos ConcurrentHashMap porque PacketEvents podría procesar paquetes de forma asíncrona
+    private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();
+
+    private static final double DEG_TO_RAD = Math.PI / 180.0;
 
     public InteractionListener(Aurus plugin) {
         this.plugin = plugin;
@@ -29,35 +33,29 @@ public class InteractionListener implements Listener {
         Player player = event.getPlayer();
         Menu menu = plugin.getMenuManager().getActiveMenu(player.getUniqueId());
 
-        if (menu == null)
-            return;
+        if (menu == null) return;
 
         event.setCancelled(true);
+        if (event.getAction() == Action.PHYSICAL) return;
 
-        if (event.getAction() == Action.PHYSICAL)
-            return;
-
-        long now = System.currentTimeMillis();
-        if (lastClick.containsKey(player.getUniqueId()) && now - lastClick.get(player.getUniqueId()) < 250)
-            return;
-        lastClick.put(player.getUniqueId(), now);
-
-        processMenuClick(player, menu);
+        handleMenuInteraction(player, menu);
     }
 
     public void handle3DClick(Player player) {
         Menu menu = plugin.getMenuManager().getActiveMenu(player.getUniqueId());
-        if (menu == null)
-            return;
-        long now = System.currentTimeMillis();
-        if (lastClick.containsKey(player.getUniqueId()) && now - lastClick.get(player.getUniqueId()) < 250)
-            return;
-        lastClick.put(player.getUniqueId(), now);
+        if (menu == null) return;
 
-        processMenuClick(player, menu);
+        handleMenuInteraction(player, menu);
     }
 
-    private void processMenuClick(Player player, Menu menu) {
+    private void handleMenuInteraction(Player player, Menu menu) {
+        UUID uuid = player.getUniqueId();
+        long now = System.currentTimeMillis();
+
+        // OPTIMIZACIÓN: getOrDefault evita hacer containsKey() y get() (ahorra una búsqueda)
+        if (now - lastClick.getOrDefault(uuid, 0L) < 250) return;
+        lastClick.put(uuid, now);
+
         float pYaw = player.getLocation().getYaw();
         float pPitch = player.getLocation().getPitch();
         float cYaw = menu.getSpawnYaw();
@@ -67,8 +65,8 @@ public class InteractionListener implements Listener {
         float dYaw = MathUtil.normalizeAngle(pYaw - cYaw);
         float dPitch = MathUtil.normalizeAngle(pPitch - cPitch);
 
-        double cursorX = Math.tan(Math.toRadians(dYaw)) * dist;
-        double cursorY = -Math.tan(Math.toRadians(dPitch)) * dist;
+        double cursorX = Math.tan(dYaw * DEG_TO_RAD) * dist;
+        double cursorY = -Math.tan(dPitch * DEG_TO_RAD) * dist;
 
         for (MenuButton btn : menu.getButtons()) {
             double size = btn.getConfig().getDouble("size", 1.0);
@@ -76,9 +74,13 @@ public class InteractionListener implements Listener {
 
             double dx = cursorX - btn.getBaseX();
             double dy = cursorY - btn.getBaseY();
-            double d2 = Math.sqrt(dx * dx + dy * dy);
 
-            if (d2 < hitRadius) {
+            // OPTIMIZACIÓN EXTREMA: Jamás uses Math.sqrt() en bucles grandes, es lentísimo.
+            // En vez de eso, calculamos la distancia al cuadrado y la comparamos con el radio al cuadrado.
+            double distanceSquared = (dx * dx) + (dy * dy);
+            double hitRadiusSquared = hitRadius * hitRadius;
+
+            if (distanceSquared < hitRadiusSquared) {
                 if ("INPUT".equalsIgnoreCase(btn.getType())) {
                     plugin.getInputProcessor().startInput(player, btn.getVariableName());
                 }
@@ -91,6 +93,9 @@ public class InteractionListener implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        plugin.getMenuManager().closeMenu(event.getPlayer());
+        Player player = event.getPlayer();
+        // PREVENCIÓN DE MEMORY LEAKS: Si se va, lo borramos de la memoria
+        lastClick.remove(player.getUniqueId());
+        plugin.getMenuManager().closeMenu(player);
     }
 }

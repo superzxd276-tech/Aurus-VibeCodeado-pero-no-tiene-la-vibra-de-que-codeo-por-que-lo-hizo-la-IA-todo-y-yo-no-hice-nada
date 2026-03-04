@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.TextDisplay;
 
 public class MenuButton {
+
     private final Display display;
     private final String rawText;
     private final Runnable onClick;
@@ -19,7 +20,7 @@ public class MenuButton {
     private final double baseY;
 
     public MenuButton(Display display, String rawText, Runnable onClick, String type, String variableName,
-            ConfigurationSection config, ActionProcessor actionProcessor, double baseX, double baseY) {
+                      ConfigurationSection config, ActionProcessor actionProcessor, double baseX, double baseY) {
         this.display = display;
         this.rawText = rawText;
         this.onClick = onClick;
@@ -32,8 +33,14 @@ public class MenuButton {
     }
 
     public void updateText(Player player) {
-        if (display instanceof TextDisplay td && rawText != null) {
-            td.setText(ColorUtils.format(actionProcessor.parse(player, rawText)));
+        // OPTIMIZACIÓN: Comprobamos si es null o vacío ANTES de hacer el instanceOf.
+        // Falla rápido (Fast-fail) ahorra ciclos de CPU inútiles.
+        if (rawText != null && !rawText.isEmpty() && display instanceof TextDisplay td) {
+
+            // EL ARREGLO:
+            // En vez del viejo .setText(String), usamos .text(Component) exclusivo de Paper.
+            // Esto inyecta los colores (incluso degradados y hex) directamente en el holograma.
+            td.text(ColorUtils.format(actionProcessor.parse(player, rawText)));
         }
     }
 
@@ -62,7 +69,8 @@ public class MenuButton {
     }
 
     public void onClick() {
-        if (onClick != null)
+        if (onClick != null) {
             onClick.run();
+        }
     }
 }

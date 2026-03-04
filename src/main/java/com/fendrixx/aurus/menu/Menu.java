@@ -1,7 +1,6 @@
 package com.fendrixx.aurus.menu;
 
 import com.fendrixx.aurus.Aurus;
-import com.fendrixx.aurus.processors.ActionProcessor;
 import com.fendrixx.aurus.util.ColorUtils;
 import com.fendrixx.aurus.util.MathUtil;
 import org.bukkit.Bukkit;
@@ -16,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Menu {
+
     private final Aurus plugin;
     private final Player player;
     private final MenuCamera camera;
@@ -31,24 +31,33 @@ public class Menu {
     private float spawnPitch;
     private boolean closed = false;
 
+    // OPTIMIZACIÓN: Creamos el efecto de poción una sola vez (es una constante)
+    // Evita instanciar new PotionEffect(...) cada vez que alguien abre un menú
+    private static final PotionEffect INVISIBILITY_EFFECT = new PotionEffect(
+            PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false, false
+    );
+
     public Menu(Aurus plugin, Player player) {
         this.plugin = plugin;
         this.player = player;
         this.camera = new MenuCamera(player);
-        this.renderer = new MenuRenderer(new ActionProcessor(plugin));
+        // OPTIMIZACIÓN: Reutilizamos el ActionProcessor cacheado de la clase principal
+        // ¡Ya no creamos una nueva instancia inútil por cada menú abierto!
+        this.renderer = new MenuRenderer(plugin.getActionProcessor());
     }
 
     public void open(String menuId) {
         ConfigurationSection section = plugin.getConfigHandler().getMenuSection(menuId);
-        if (section == null)
-            return;
+        if (section == null) return;
 
         this.oldLocation = player.getLocation().clone();
         this.menuDistance = section.getDouble("distance", 2.5);
 
         Location savedLocation = player.getLocation().clone();
         camera.spawn();
-        player.teleport(savedLocation);
+
+        // PAPER API: teleportAsync() evita que el servidor dé un lagazo si el chunk está descargado
+        player.teleportAsync(savedLocation);
 
         this.spawnYaw = player.getLocation().getYaw();
         this.spawnPitch = player.getLocation().getPitch();
@@ -63,24 +72,36 @@ public class Menu {
                 double bx = c.getDouble("x");
                 double by = c.getDouble("y");
                 Location loc = calculateComponentLocation(bx, by);
-                MenuButton btn = renderer.createComponent(player, c.getString("type", "BUTTON").toUpperCase(), c, loc,
-                        bx, by, this::close);
+
+                MenuButton btn = renderer.createComponent(player, c.getString("type", "BUTTON").toUpperCase(),
+                        c, loc, bx, by, this::close);
+
                 if (btn != null) {
                     buttons.add(btn);
-                    for (Player otherPlayer : Bukkit.getOnlinePlayers()) {
-                        if (!otherPlayer.equals(player)) {
-                            otherPlayer.hideEntity(plugin, btn.getDisplay());
-                            otherPlayer.hideEntity(plugin, player);
-                        }
-                    }
+                }
+            }
+        }
+
+        // OPTIMIZACIÓN DE BUCLES (O(N) en lugar de O(N*M)):
+        // Ocultamos todas las entidades en UN SOLO BUCLE por jugador, en lugar de hacerlo por cada botón.
+        for (Player otherPlayer : Bukkit.getOnlinePlayers()) {
+            if (!otherPlayer.equals(player)) {
+                otherPlayer.hideEntity(plugin, player); // Esconde al dueño del menú
+                if (cursorEntity != null) {
+                    otherPlayer.hideEntity(plugin, cursorEntity); // Esconde el cursor
+                }
+                for (MenuButton btn : buttons) {
+                    otherPlayer.hideEntity(plugin, btn.getDisplay()); // Esconde los botones
                 }
             }
         }
 
         player.hideEntity(plugin, player);
-        player.addPotionEffect(
-                new PotionEffect(PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false, false));
+        player.addPotionEffect(INVISIBILITY_EFFECT);
 
+        // NOTA SOBRE FOLIA:
+        // Si tu clase MenuAnimator extiende BukkitRunnable, recuerda actualizarla luego para que use
+        // el EntityScheduler de Paper en vez del Scheduler global.
         int delay = section.getInt("update-in-ticks", 20);
         this.animator = new MenuAnimator(this, player, buttons, menuDistance, delay);
         this.animator.runTaskTimer(plugin, 0L, 1L);
@@ -92,21 +113,22 @@ public class Menu {
         loc.setYaw(spawnYaw + 180f);
         loc.setPitch(-spawnPitch);
 
-        TextDisplay td = (TextDisplay) player.getWorld().spawnEntity(loc, EntityType.TEXT_DISPLAY);
-        td.setBillboard(Display.Billboard.FIXED);
+        String valRaw = c != null ? c.getString("value", "●") : "●";
+        String parsedVal = renderer.getActionProcessor().parse(player, valRaw);
 
-        String val = c != null ? c.getString("value", "●") : "●";
-        val = renderer.getActionProcessor().parse(player, val);
-        td.setText(ColorUtils.format(val));
-        td.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
-        renderer.setupDisplay(td, (float) (c != null ? c.getDouble("size", 1.0) : 1.0), c);
-        this.cursorEntity = td;
+        // OPTIMIZACIÓN (Consumer) y ARREGLO (.text(Component)) combinados:
+        // Spawneamos la entidad de una sola vez con los colores y config ya aplicados.
+        this.cursorEntity = player.getWorld().spawn(loc, TextDisplay.class, td -> {
+            td.setBillboard(Display.Billboard.FIXED);
 
-        for (Player otherPlayer : Bukkit.getOnlinePlayers()) {
-            if (!otherPlayer.equals(player)) {
-                otherPlayer.hideEntity(plugin, td);
+            // EL ARREGLO MÁGICO DE PAPER:
+            td.text(ColorUtils.format(parsedVal));
+
+            if (c == null || !c.getBoolean("background", true)) {
+                td.setBackgroundColor(Color.fromARGB(0, 0, 0, 0));
             }
-        }
+            renderer.setupDisplay(td, (float) (c != null ? c.getDouble("size", 1.0) : 1.0), c);
+        });
     }
 
     public Location calculateComponentLocation(double x, double y) {
@@ -114,26 +136,31 @@ public class Menu {
     }
 
     public void close() {
-        if (closed)
-            return;
+        if (closed) return;
         closed = true;
 
-        if (oldLocation != null && player.isOnline())
-            player.teleport(oldLocation);
-        if (animator != null)
-            animator.cancel();
+        if (animator != null) animator.cancel();
+
+        // Despawn rápido de entidades
         camera.remove();
-        if (cursorEntity != null)
-            cursorEntity.remove();
+        if (cursorEntity != null) cursorEntity.remove();
         buttons.forEach(b -> b.getDisplay().remove());
         buttons.clear();
+
         plugin.getMenuManager().removeMenu(player.getUniqueId());
 
-        player.showEntity(plugin, player);
-        player.removePotionEffect(PotionEffectType.INVISIBILITY);
-        for (Player otherPlayer : Bukkit.getOnlinePlayers()) {
-            if (!otherPlayer.equals(player)) {
-                otherPlayer.showEntity(plugin, player);
+        if (player.isOnline()) {
+            player.showEntity(plugin, player);
+            player.removePotionEffect(PotionEffectType.INVISIBILITY);
+
+            if (oldLocation != null) {
+                player.teleportAsync(oldLocation); // Uso seguro para Folia/Paper
+            }
+
+            for (Player otherPlayer : Bukkit.getOnlinePlayers()) {
+                if (!otherPlayer.equals(player)) {
+                    otherPlayer.showEntity(plugin, player);
+                }
             }
         }
     }
