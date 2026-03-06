@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.fendrixx"
-version = "1.0.0-BETA"
+version = "1.0.2-BETA"
 
 java {
     toolchain {

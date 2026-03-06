@@ -11,6 +11,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.EquipmentSlot;
 
 import java.util.Map;
 import java.util.UUID;
@@ -19,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InteractionListener implements Listener {
 
     private final Aurus plugin;
-    // Usamos ConcurrentHashMap porque PacketEvents podría procesar paquetes de forma asíncrona
     private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();
 
     private static final double DEG_TO_RAD = Math.PI / 180.0;
@@ -30,29 +30,36 @@ public class InteractionListener implements Listener {
 
     @EventHandler
     public void onClick(PlayerInteractEvent event) {
+        // OPTIMIZACIÓN BUKKIT: Evitar que el evento se procese dos veces (Mano principal y secundaria)
+        if (event.getHand() == EquipmentSlot.OFF_HAND) return;
+        if (event.getAction() == Action.PHYSICAL) return;
+
         Player player = event.getPlayer();
         Menu menu = plugin.getMenuManager().getActiveMenu(player.getUniqueId());
 
         if (menu == null) return;
 
         event.setCancelled(true);
-        if (event.getAction() == Action.PHYSICAL) return;
 
-        handleMenuInteraction(player, menu);
+        // FOLIA FIX: Si estamos en un evento normal, ya estamos en el hilo principal de la región,
+        // pero usar el Scheduler de la entidad asegura que todo fluya correctamente en multihilo.
+        player.getScheduler().run(plugin, task -> handleMenuInteraction(player, menu), null);
     }
 
     public void handle3DClick(Player player) {
         Menu menu = plugin.getMenuManager().getActiveMenu(player.getUniqueId());
         if (menu == null) return;
 
-        handleMenuInteraction(player, menu);
+        // FOLIA FIX EXTREMO: Si esto es llamado desde PacketEvents (que es asíncrono),
+        // intentar interactuar con el jugador o Bukkit API crasheará Folia.
+        // Delegamos la tarea al hilo de la entidad:
+        player.getScheduler().run(plugin, task -> handleMenuInteraction(player, menu), null);
     }
 
     private void handleMenuInteraction(Player player, Menu menu) {
         UUID uuid = player.getUniqueId();
         long now = System.currentTimeMillis();
 
-        // OPTIMIZACIÓN: getOrDefault evita hacer containsKey() y get() (ahorra una búsqueda)
         if (now - lastClick.getOrDefault(uuid, 0L) < 250) return;
         lastClick.put(uuid, now);
 
@@ -69,14 +76,15 @@ public class InteractionListener implements Listener {
         double cursorY = -Math.tan(dPitch * DEG_TO_RAD) * dist;
 
         for (MenuButton btn : menu.getButtons()) {
+            // ADVERTENCIA DE RENDIMIENTO:
+            // Leer getConfig() en cada click para cada botón es costoso.
+            // Sería ideal que guardes 'size' como una variable en la clase MenuButton al crearlo (ej: btn.getSize()).
             double size = btn.getConfig().getDouble("size", 1.0);
             double hitRadius = 0.5 * size;
 
             double dx = cursorX - btn.getBaseX();
             double dy = cursorY - btn.getBaseY();
 
-            // OPTIMIZACIÓN EXTREMA: Jamás uses Math.sqrt() en bucles grandes, es lentísimo.
-            // En vez de eso, calculamos la distancia al cuadrado y la comparamos con el radio al cuadrado.
             double distanceSquared = (dx * dx) + (dy * dy);
             double hitRadiusSquared = hitRadius * hitRadius;
 
@@ -94,7 +102,6 @@ public class InteractionListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
-        // PREVENCIÓN DE MEMORY LEAKS: Si se va, lo borramos de la memoria
         lastClick.remove(player.getUniqueId());
         plugin.getMenuManager().closeMenu(player);
     }

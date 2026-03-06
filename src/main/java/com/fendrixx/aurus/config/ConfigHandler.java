@@ -3,7 +3,6 @@ package com.fendrixx.aurus.config;
 import com.fendrixx.aurus.Aurus;
 import com.fendrixx.aurus.util.ColorUtils;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -13,7 +12,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.logging.Level;
 
 public class ConfigHandler {
     private final Aurus plugin;
@@ -109,6 +107,47 @@ public class ConfigHandler {
 
     public ConfigurationSection getCursorSection() {
         return config != null ? config.getConfigurationSection("cursor") : null;
+    }
+
+    // NUEVO MÉTODO: Elimina un menú tanto de la memoria como del archivo físico
+    public boolean deleteMenu(String menuId) {
+        if (menuId == null || menuId.isEmpty()) return false;
+
+        // 1. Buscamos el menú en la carpeta "menus"
+        for (Map.Entry<String, FileConfiguration> entry : menus.entrySet()) {
+            String fileName = entry.getKey();
+            FileConfiguration menuFile = entry.getValue();
+
+            if (menuFile.isConfigurationSection(menuId)) {
+                menuFile.set(menuId, null); // Lo borramos de la memoria
+
+                File file = new File(plugin.getDataFolder(), "menus/" + fileName + ".yml");
+                try {
+                    // Si el archivo quedó vacío después de borrar el menú, borramos el archivo físico
+                    if (menuFile.getKeys(false).isEmpty()) {
+                        if (file.exists()) {
+                            file.delete();
+                        }
+                        menus.remove(fileName); // Lo sacamos del HashMap de cachés
+                    } else {
+                        menuFile.save(file); // Guardamos los cambios en el archivo
+                    }
+                    return true; // Terminamos aquí porque ya lo borramos
+                } catch (Exception e) {
+                    Bukkit.getConsoleSender().sendMessage(ColorUtils.format(prefix + "<dark_gray>[<red>✘<dark_gray>] <red>Failed to delete menu file: " + e.getMessage()));
+                    return false;
+                }
+            }
+        }
+
+        // 2. Si no estaba en la carpeta "menus", lo buscamos en el main "config.yml"
+        if (config != null && config.isConfigurationSection("menus." + menuId)) {
+            config.set("menus." + menuId, null);
+            plugin.saveConfig(); // Guarda el config.yml
+            return true;
+        }
+
+        return false; // El menú no existía
     }
 
     public void reload() {

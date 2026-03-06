@@ -32,7 +32,6 @@ public class Menu {
     private boolean closed = false;
 
     // OPTIMIZACIÓN: Creamos el efecto de poción una sola vez (es una constante)
-    // Evita instanciar new PotionEffect(...) cada vez que alguien abre un menú
     private static final PotionEffect INVISIBILITY_EFFECT = new PotionEffect(
             PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false, false
     );
@@ -41,8 +40,6 @@ public class Menu {
         this.plugin = plugin;
         this.player = player;
         this.camera = new MenuCamera(player);
-        // OPTIMIZACIÓN: Reutilizamos el ActionProcessor cacheado de la clase principal
-        // ¡Ya no creamos una nueva instancia inútil por cada menú abierto!
         this.renderer = new MenuRenderer(plugin.getActionProcessor());
     }
 
@@ -56,55 +53,63 @@ public class Menu {
         Location savedLocation = player.getLocation().clone();
         camera.spawn();
 
-        // PAPER API: teleportAsync() evita que el servidor dé un lagazo si el chunk está descargado
-        player.teleportAsync(savedLocation);
+        // PAPER/FOLIA API: teleportAsync() es OBLIGATORIO en Folia.
+        // Mover un jugador síncronamente a un chunk descargado causa un crash de hilos.
+        player.teleportAsync(savedLocation).thenAccept(success -> {
+            if (!success) {
+                // Si el teletransporte falló por algún motivo (ej. chunk corrupto), abortamos
+                plugin.getLogger().warning("No se pudo teletransportar al jugador " + player.getName() + " para abrir el menú.");
+                return;
+            }
 
-        this.spawnYaw = player.getLocation().getYaw();
-        this.spawnPitch = player.getLocation().getPitch();
-        this.menuOrigin = MathUtil.getMenuOrigin(camera.getEyeLocation(), spawnYaw, spawnPitch, menuDistance);
+            // Una vez que el teletransporte fue exitoso (y estamos seguros en el hilo de la región)
+            // Ejecutamos el resto del spawn visual:
+            this.spawnYaw = player.getLocation().getYaw();
+            this.spawnPitch = player.getLocation().getPitch();
+            this.menuOrigin = MathUtil.getMenuOrigin(camera.getEyeLocation(), spawnYaw, spawnPitch, menuDistance);
 
-        spawnCursor();
+            spawnCursor();
 
-        ConfigurationSection comps = section.getConfigurationSection("components");
-        if (comps != null) {
-            for (String key : comps.getKeys(false)) {
-                ConfigurationSection c = comps.getConfigurationSection(key);
-                double bx = c.getDouble("x");
-                double by = c.getDouble("y");
-                Location loc = calculateComponentLocation(bx, by);
+            ConfigurationSection comps = section.getConfigurationSection("components");
+            if (comps != null) {
+                for (String key : comps.getKeys(false)) {
+                    ConfigurationSection c = comps.getConfigurationSection(key);
+                    double bx = c.getDouble("x");
+                    double by = c.getDouble("y");
+                    Location loc = calculateComponentLocation(bx, by);
 
-                MenuButton btn = renderer.createComponent(player, c.getString("type", "BUTTON").toUpperCase(),
-                        c, loc, bx, by, this::close);
+                    MenuButton btn = renderer.createComponent(player, c.getString("type", "BUTTON").toUpperCase(),
+                            c, loc, bx, by, this::close);
 
-                if (btn != null) {
-                    buttons.add(btn);
+                    if (btn != null) {
+                        buttons.add(btn);
+                    }
                 }
             }
-        }
 
-        // OPTIMIZACIÓN DE BUCLES (O(N) en lugar de O(N*M)):
-        // Ocultamos todas las entidades en UN SOLO BUCLE por jugador, en lugar de hacerlo por cada botón.
-        for (Player otherPlayer : Bukkit.getOnlinePlayers()) {
-            if (!otherPlayer.equals(player)) {
-                otherPlayer.hideEntity(plugin, player); // Esconde al dueño del menú
-                if (cursorEntity != null) {
-                    otherPlayer.hideEntity(plugin, cursorEntity); // Esconde el cursor
-                }
-                for (MenuButton btn : buttons) {
-                    otherPlayer.hideEntity(plugin, btn.getDisplay()); // Esconde los botones
+            // FOLIA SAFETY: hideEntity/showEntity delega el paquete de red asíncronamente en Paper.
+            // Es seguro llamarlo dentro de este bucle sin importar en qué región estén los otros jugadores.
+            for (Player otherPlayer : Bukkit.getOnlinePlayers()) {
+                if (!otherPlayer.equals(player)) {
+                    otherPlayer.hideEntity(plugin, player); // Esconde al dueño del menú
+                    if (cursorEntity != null) {
+                        otherPlayer.hideEntity(plugin, cursorEntity); // Esconde el cursor
+                    }
+                    for (MenuButton btn : buttons) {
+                        otherPlayer.hideEntity(plugin, btn.getDisplay()); // Esconde los botones
+                    }
                 }
             }
-        }
 
-        player.hideEntity(plugin, player);
-        player.addPotionEffect(INVISIBILITY_EFFECT);
+            player.hideEntity(plugin, player);
+            player.addPotionEffect(INVISIBILITY_EFFECT);
 
-        // NOTA SOBRE FOLIA:
-        // Si tu clase MenuAnimator extiende BukkitRunnable, recuerda actualizarla luego para que use
-        // el EntityScheduler de Paper en vez del Scheduler global.
-        int delay = section.getInt("update-in-ticks", 20);
-        this.animator = new MenuAnimator(this, player, buttons, menuDistance, delay);
-        this.animator.runTaskTimer(plugin, 0L, 1L);
+            // FOLIA FIX: Aquí conectamos el MenuAnimator optimizado.
+            // Pasamos el plugin como primer argumento y usamos .start() en lugar de runTaskTimer()
+            int delay = section.getInt("update-in-ticks", 20);
+            this.animator = new MenuAnimator(plugin, this, player, buttons, menuDistance, delay);
+            this.animator.start();
+        });
     }
 
     private void spawnCursor() {
@@ -116,12 +121,10 @@ public class Menu {
         String valRaw = c != null ? c.getString("value", "●") : "●";
         String parsedVal = renderer.getActionProcessor().parse(player, valRaw);
 
-        // OPTIMIZACIÓN (Consumer) y ARREGLO (.text(Component)) combinados:
-        // Spawneamos la entidad de una sola vez con los colores y config ya aplicados.
         this.cursorEntity = player.getWorld().spawn(loc, TextDisplay.class, td -> {
             td.setBillboard(Display.Billboard.FIXED);
 
-            // EL ARREGLO MÁGICO DE PAPER:
+            // PAPER API: TextDisplay.text() acepta un componente nativo (Adventure API)
             td.text(ColorUtils.format(parsedVal));
 
             if (c == null || !c.getBoolean("background", true)) {
@@ -139,7 +142,8 @@ public class Menu {
         if (closed) return;
         closed = true;
 
-        if (animator != null) animator.cancel();
+        // FOLIA FIX: Ahora llamamos a .stop() que cancela el ScheduledTask de Folia
+        if (animator != null) animator.stop();
 
         // Despawn rápido de entidades
         camera.remove();
@@ -153,8 +157,9 @@ public class Menu {
             player.showEntity(plugin, player);
             player.removePotionEffect(PotionEffectType.INVISIBILITY);
 
+            // Uso seguro para Folia/Paper
             if (oldLocation != null) {
-                player.teleportAsync(oldLocation); // Uso seguro para Folia/Paper
+                player.teleportAsync(oldLocation);
             }
 
             for (Player otherPlayer : Bukkit.getOnlinePlayers()) {

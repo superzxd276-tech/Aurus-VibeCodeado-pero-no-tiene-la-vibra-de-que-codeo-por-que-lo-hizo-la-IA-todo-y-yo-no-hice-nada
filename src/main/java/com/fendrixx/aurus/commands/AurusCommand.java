@@ -22,13 +22,14 @@ public class AurusCommand implements CommandExecutor, TabCompleter {
     private static final Component MSG_RELOAD = ColorUtils.format(PREFIX + "<dark_gray>[<green>✔<dark_gray>] <green>Configuration and menus reloaded.");
     private static final Component MSG_ONLY_PLAYERS = ColorUtils.format(PREFIX + "<dark_gray>[<red>✘<dark_gray>] <red>Only players can use this subcommand.");
     private static final Component MSG_USAGE_OPEN = ColorUtils.format(PREFIX + "<dark_gray>[<yellow>?<dark_gray>] <gray>Usage: /aurus open <menu_id>");
+    private static final Component MSG_USAGE_DELETE = ColorUtils.format(PREFIX + "<dark_gray>[<yellow>?<dark_gray>] <gray>Usage: /aurus delete <menu_id>");
     private static final Component MSG_MENU_CLOSED = ColorUtils.format(PREFIX + "<dark_gray>[<green>✔<dark_gray>] <green>Menu closed.");
     private static final Component MSG_NO_MENU = ColorUtils.format(PREFIX + "<dark_gray>[<yellow>!<dark_gray>] <red>You don't have an active menu.");
-    private static final Component MSG_HELP = ColorUtils.format(PREFIX + "<dark_gray>[<yellow>?<dark_gray>] <gray>Available commands: <white>open, close, reload");
+    private static final Component MSG_HELP = ColorUtils.format(PREFIX + "<dark_gray>[<yellow>?<dark_gray>] <gray>Available commands: <white>open, close, delete, reload");
     private static final Component MSG_NO_PERMS = ColorUtils.format(PREFIX + "<dark_gray>[<red>✘<dark_gray>] <red>You do not have permission.");
 
     // Pre-lista de argumentos raíz para el TabCompleter para evitar crear Listas innecesarias
-    private static final List<String> ROOT_ARGS = List.of("open", "reload", "close");
+    private static final List<String> ROOT_ARGS = List.of("open", "reload", "close", "delete");
 
     public AurusCommand(Aurus plugin) {
         this.plugin = plugin;
@@ -53,7 +54,26 @@ public class AurusCommand implements CommandExecutor, TabCompleter {
                 return true;
             }
 
-            // Los demás comandos obligan a que sea un Jugador
+            // Delete (Permitimos que la consola lo ejecute también)
+            if (sub.equals("delete")) {
+                if (args.length < 2) {
+                    sender.sendMessage(MSG_USAGE_DELETE);
+                    return true;
+                }
+
+                String menuId = args[1];
+                if (plugin.getConfigHandler().getMenuSection(menuId) == null) {
+                    sender.sendMessage(ColorUtils.format(PREFIX + "<dark_gray>[<red>✘<dark_gray>] <red>Menu <yellow>" + menuId + "</yellow> not found."));
+                    return true;
+                }
+
+                // Llamamos al método (que agregaremos a continuación en tu ConfigHandler)
+                plugin.getConfigHandler().deleteMenu(menuId);
+                sender.sendMessage(ColorUtils.format(PREFIX + "<dark_gray>[<green>✔<dark_gray>] <green>Menu <yellow>" + menuId + "</yellow> deleted successfully."));
+                return true;
+            }
+
+            // Los demás comandos (open/close) obligan a que sea un Jugador
             if (!(sender instanceof Player player)) {
                 sender.sendMessage(MSG_ONLY_PLAYERS);
                 return true;
@@ -97,11 +117,13 @@ public class AurusCommand implements CommandExecutor, TabCompleter {
         // Si no tiene permiso, no le sugerimos nada (Seguridad)
         if (!sender.hasPermission("aurus.admin")) return List.of();
 
-        // Autocompletado ultra-rápido usando Streams nativos de Java 17
+        // Autocompletado ultra-rápido usando Streams nativos de Java
         if (args.length == 1) {
             String input = args[0].toLowerCase();
             return ROOT_ARGS.stream().filter(s -> s.startsWith(input)).toList();
-        } else if (args.length == 2 && args[0].equalsIgnoreCase("open")) {
+        }
+        // Si el comando es "open" o "delete", le sugerimos los nombres de los menús
+        else if (args.length == 2 && (args[0].equalsIgnoreCase("open") || args[0].equalsIgnoreCase("delete"))) {
             String input = args[1].toLowerCase();
             return plugin.getConfigHandler().getMenuKeys().stream()
                     .filter(s -> s.toLowerCase().startsWith(input))
